@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchAll } from '@/lib/supabase';
 import { StatusBadge, SkeletonKPI } from '@/components/ui';
+import LiveFleetMap from '@/components/LiveFleetMap';
 
 export default function DashboardPage({ onNavigate }) {
   const [data,     setData]     = useState({ shipments:[], vehicles:[], alerts:[], orders:[] });
@@ -107,48 +108,32 @@ export default function DashboardPage({ onNavigate }) {
         ))}
       </div>
 
-      {/* Row 3 — Chart + Map */}
-      <div className="grid2 mb-16">
-        <div className="card">
-          <div className="flex items-center justify-between mb-16">
-            <div>
-              <div className="sect-label mb-4" style={{marginBottom:2}}>SHIPMENT THROUGHPUT</div>
-              <div style={{fontSize:10,color:'var(--t3)'}}>7-day rolling · auto-refreshed</div>
-            </div>
-            <div className="flex gap-6">
-              {['1D','7D','30D'].map((l,i)=>(
-                <button key={l} className={`btn btn-sm ${i===1?'btn-primary':'btn-ghost'}`}>{l}</button>
-              ))}
-            </div>
+      {/* Row 3 — Chart */}
+      <div className="card mb-16">
+        <div className="flex items-center justify-between mb-16">
+          <div>
+            <div className="sect-label" style={{marginBottom:2}}>SHIPMENT THROUGHPUT</div>
+            <div style={{fontSize:10,color:'var(--t3)'}}>7-day rolling · auto-refreshed</div>
           </div>
-          <div style={{height:190}}><canvas ref={chartRef}/></div>
-        </div>
-
-        <div className="card">
-          <div className="sect-label mb-12">FLEET POSITIONS</div>
-          <div className="map-bg">
-            <svg viewBox="0 0 320 190" width="100%" height="100%" style={{position:'absolute',inset:0,opacity:0.5}}>
-              {[63,95,127].map(y=><line key={y} x1="0" y1={y} x2="320" y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth="1"/>)}
-              {[80,160,240].map(x=><line key={x} x1={x} y1="0" x2={x} y2="190" stroke="rgba(255,255,255,0.06)" strokeWidth="1"/>)}
-              <path d="M45,90 Q100,68 165,80 Q225,92 285,82" fill="none" stroke="rgba(20,184,166,0.3)" strokeWidth="1.5" strokeDasharray="5,4"/>
-              <path d="M35,115 Q95,135 155,122 Q215,109 270,128" fill="none" stroke="rgba(124,58,237,0.3)" strokeWidth="1.5" strokeDasharray="5,4"/>
-            </svg>
-            {vehicles.map((v,i) => {
-              const x = 25 + ((i*37+13) % 270);
-              const y = 18 + ((i*21+9)  % 155);
-              const cls = v.status==='Alert'?'vdot-r':v.status==='Stopped'?'vdot-a':'vdot-g';
-              return <div key={v.id} className={`vdot ${cls}`} style={{left:x,top:y,position:'absolute'}} title={v.vehicle_number}/>;
-            })}
-          </div>
-          <div className="flex gap-14 mt-8">
-            {[{c:'#14b8a6',l:'Moving',v:moving||42},{c:'#f59e0b',l:'Stopped',v:stopped||5},{c:'#ef4444',l:'Alert',v:alertVeh||3}].map(s=>(
-              <div key={s.l} className="flex items-center gap-6" style={{fontSize:10,color:'var(--t2)'}}>
-                <div style={{width:6,height:6,borderRadius:'50%',background:s.c,flexShrink:0}}/>
-                {s.l} ({s.v})
-              </div>
+          <div className="flex gap-6">
+            {['1D','7D','30D'].map((l,i)=>(
+              <button key={l} className={`btn btn-sm ${i===1?'btn-primary':'btn-ghost'}`}>{l}</button>
             ))}
           </div>
         </div>
+        <div style={{height:190}}><canvas ref={chartRef}/></div>
+      </div>
+
+      {/* Row 4 — Live Fleet Map (full width) */}
+      <div className="card mb-16">
+        <div className="flex items-center justify-between mb-12">
+          <div>
+            <div className="sect-label" style={{marginBottom:2}}>LIVE FLEET MAP — USA</div>
+            <div style={{fontSize:10,color:'var(--t3)'}}>Real-time vehicle positions · 10 assets tracked · Hover for details</div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={()=>onNavigate('fleet')}>Fleet Manager →</button>
+        </div>
+        <LiveFleetMap height={280}/>
       </div>
 
       {/* Row 4 — Recent Shipments + Operations Log */}
