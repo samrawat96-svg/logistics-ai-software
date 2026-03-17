@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { showToast } from '@/components/ui';
+import { toast } from '@/components/ui';
 
 const DEFAULT_SETTINGS = {
   hos_warning_minutes: 60,
@@ -29,13 +29,13 @@ export default function SettingsPage() {
     setSaving(true);
     await new Promise(r => setTimeout(r, 600));
     localStorage.setItem('logiai_settings', JSON.stringify(settings));
-    showToast('Settings saved successfully','success');
+    toast('Settings saved successfully','success');
     setSaving(false);
   }
 
   function handleReset() {
     setSettings(DEFAULT_SETTINGS);
-    showToast('Settings reset to defaults','info');
+    toast('Settings reset to defaults','info');
   }
 
   const Toggle = ({ val, onChange }) => (
