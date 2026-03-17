@@ -1,169 +1,204 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { fetchAll, insertRow, updateRow, deleteRow } from '@/lib/supabase';
-import { showToast, Modal, StatusBadge, FormRow, EmptyState, Spinner, ProgressBar } from '@/components/ui';
+import { toast, Modal, StatusBadge, Field, EmptyState, Spinner, SkeletonCards, PageHeader, useConfirm, ProgressBar } from '@/components/ui';
 
-const STATUSES = ['Moving','Stopped','Alert'];
-const ELD_OPTS = ['Connected','Malfunction','Data Transfer'];
-const HOS_OPTS = ['D','ON','SB','OFF'];
-const CARGO_TYPES = ['Electronics','Auto Parts','Pharma·Cold Chain','Foodstuff','Hazmat','General Freight','Reefer·Produce'];
+const VEH_STATUSES = ['Moving','Stopped','Alert'];
+const ELD_OPTS     = ['Connected','Malfunction','Data Transfer'];
+const HOS_OPTS     = ['D','ON','SB','OFF'];
+const CARGO_TYPES  = ['Electronics','Auto Parts','Pharma·Cold Chain','Foodstuff','Hazmat','General Freight','Reefer·Produce'];
+const BLANK = {vehicle_number:'',vin:'',driver_name:'',eld_status:'Connected',hos_status:'OFF',drive_remaining_minutes:660,fuel_percent:100,odometer_miles:0,status:'Stopped',cargo_type:'General Freight',speed_mph:0};
 
 export default function FleetPage({ searchQuery }) {
-  const [vehicles, setVehicles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [showDispatchModal, setShowDispatchModal] = useState(false);
-  const [editVeh, setEditVeh] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ vehicle_number:'', vin:'', driver_name:'', eld_status:'Connected', hos_status:'OFF', drive_remaining_minutes:660, fuel_percent:100, odometer_miles:0, status:'Stopped', cargo_type:'General Freight', speed_mph:0, latitude:'', longitude:'' });
-  const [dispatchForm, setDispatchForm] = useState({ vehicle_id:'', destination:'', cargo_type:'General Freight', notes:'' });
+  const [vehicles,      setVehicles] = useState([]);
+  const [loading,       setLoading]  = useState(true);
+  const [showModal,     setShow]     = useState(false);
+  const [showDispatch,  setDispatch] = useState(false);
+  const [editVeh,       setEditVeh]  = useState(null);
+  const [saving,        setSaving]   = useState(false);
+  const [form,          setForm]     = useState(BLANK);
+  const [dispForm,      setDF]       = useState({vehicle_id:'',destination:'',cargo_type:'General Freight'});
+  const [confirm, ConfirmEl]         = useConfirm();
 
-  useEffect(() => { load(); }, []);
+  useEffect(()=>{ load(); },[]);
 
   async function load() {
     setLoading(true);
-    try { setVehicles(await fetchAll('vehicles', { order:'vehicle_number', asc:true })); } catch { showToast('Failed to load fleet','error'); }
+    try { setVehicles(await fetchAll('vehicles',{order:'vehicle_number',asc:true})); }
+    catch { toast('Failed to load fleet','error'); }
     setLoading(false);
   }
 
   function openNew() {
-    const num = `TRK-${String(vehicles.length + 1).padStart(4,'0')}`;
-    setForm({ vehicle_number:num, vin:`1HTMM${Math.random().toString().slice(2,12)}`, driver_name:'', eld_status:'Connected', hos_status:'OFF', drive_remaining_minutes:660, fuel_percent:100, odometer_miles:0, status:'Stopped', cargo_type:'General Freight', speed_mph:0, latitude:'', longitude:'' });
-    setEditVeh(null); setShowModal(true);
+    const num = `TRK-${String(vehicles.length+1).padStart(4,'0')}`;
+    setForm({...BLANK,vehicle_number:num,vin:`VIN${Date.now().toString().slice(-8)}`});
+    setEditVeh(null); setShow(true);
   }
-
   function openEdit(v) {
-    setForm({ vehicle_number:v.vehicle_number, vin:v.vin||'', driver_name:v.driver_name||'', eld_status:v.eld_status, hos_status:v.hos_status, drive_remaining_minutes:v.drive_remaining_minutes, fuel_percent:v.fuel_percent, odometer_miles:v.odometer_miles, status:v.status, cargo_type:v.cargo_type||'General Freight', speed_mph:v.speed_mph||0, latitude:v.latitude||'', longitude:v.longitude||'' });
-    setEditVeh(v); setShowModal(true);
+    setForm({vehicle_number:v.vehicle_number,vin:v.vin||'',driver_name:v.driver_name||'',eld_status:v.eld_status,hos_status:v.hos_status,drive_remaining_minutes:v.drive_remaining_minutes,fuel_percent:v.fuel_percent,odometer_miles:v.odometer_miles,status:v.status,cargo_type:v.cargo_type||'General Freight',speed_mph:v.speed_mph||0});
+    setEditVeh(v); setShow(true);
   }
 
   async function handleSave(e) {
     e.preventDefault();
-    if (!form.vehicle_number) { showToast('Vehicle number required','error'); return; }
+    if (!form.vehicle_number){toast('Vehicle number required','error');return;}
     setSaving(true);
     try {
-      const payload = { ...form, fuel_percent:parseFloat(form.fuel_percent), drive_remaining_minutes:parseInt(form.drive_remaining_minutes), odometer_miles:parseInt(form.odometer_miles), speed_mph:parseInt(form.speed_mph), latitude:form.latitude?parseFloat(form.latitude):null, longitude:form.longitude?parseFloat(form.longitude):null };
-      if (editVeh) { await updateRow('vehicles', editVeh.id, payload); showToast('Vehicle updated','success'); }
-      else { await insertRow('vehicles', payload); showToast('Vehicle added to fleet','success'); }
-      setShowModal(false); load();
-    } catch(err) { showToast(err.message,'error'); }
+      const p = {...form, drive_remaining_minutes:+form.drive_remaining_minutes, fuel_percent:+form.fuel_percent, odometer_miles:+form.odometer_miles, speed_mph:+form.speed_mph};
+      if(editVeh){await updateRow('vehicles',editVeh.id,p);toast('Vehicle updated','success');}
+      else       {await insertRow('vehicles',p);           toast('Vehicle added','success');}
+      setShow(false); load();
+    } catch(err){toast(err.message,'error');}
     setSaving(false);
   }
 
   async function handleDelete(v) {
-    if (!confirm(`Remove ${v.vehicle_number} from fleet?`)) return;
-    try { await deleteRow('vehicles', v.id); showToast('Vehicle removed','info'); load(); } catch(err) { showToast(err.message,'error'); }
+    const ok = await confirm({title:'Remove Vehicle',description:`Remove ${v.vehicle_number} from the fleet?`,confirmText:'Remove',variant:'danger'});
+    if (!ok) return;
+    try{await deleteRow('vehicles',v.id);toast('Vehicle removed','info');load();}
+    catch(err){toast(err.message,'error');}
   }
 
   async function handleDispatch(e) {
     e.preventDefault();
-    const v = vehicles.find(x => x.vehicle_number === dispatchForm.vehicle_id);
-    if (!v) { showToast('Select a vehicle','error'); return; }
+    const v = vehicles.find(x=>x.vehicle_number===dispForm.vehicle_id);
+    if (!v){toast('Select a vehicle','error');return;}
     setSaving(true);
     try {
-      await updateRow('vehicles', v.id, { status:'Moving', cargo_type:dispatchForm.cargo_type });
-      await insertRow('shipments', { bol_number:`BOL-${Date.now()}-D`, scac:'USX', incoterms:'FOB', origin:'DISPATCH', destination:dispatchForm.destination, vehicle_id:dispatchForm.vehicle_id, status:'Booked' });
-      showToast(`${v.vehicle_number} dispatched to ${dispatchForm.destination}`,'success');
-      setShowDispatchModal(false); load();
-    } catch(err) { showToast(err.message,'error'); }
+      await updateRow('vehicles',v.id,{status:'Moving',cargo_type:dispForm.cargo_type});
+      toast(`${v.vehicle_number} dispatched to ${dispForm.destination}`,'success');
+      setDispatch(false); load();
+    } catch(err){toast(err.message,'error');}
     setSaving(false);
   }
 
-  const filtered = vehicles.filter(v => !searchQuery || v.vehicle_number?.toLowerCase().includes(searchQuery.toLowerCase()) || v.driver_name?.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filtered = vehicles.filter(v=>!searchQuery||`${v.vehicle_number} ${v.driver_name||''} ${v.status}`.toLowerCase().includes(searchQuery.toLowerCase()));
+  const moving = vehicles.filter(v=>v.status==='Moving').length;
+  const alerts = vehicles.filter(v=>v.status==='Alert').length;
+
+  const statusColor = s => s==='Alert'?'#ef4444':s==='Stopped'?'#f59e0b':'#14b8a6';
+  const hosColor    = m => m<60?'#f87171':m<120?'#fbbf24':'#5eead4';
+  const fuelColor   = f => f<25?'#ef4444':f<50?'#f59e0b':'#14b8a6';
 
   return (
-    <div className="fade-in">
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-        <div>
-          <div className="st" style={{ marginBottom:1 }}>FLEET MANAGEMENT</div>
-          <div style={{ fontSize:10, color:'var(--t3)' }}>{vehicles.length} vehicles · {vehicles.filter(v=>v.status==='Moving').length} active · ELD mandate compliance</div>
-        </div>
-        <div style={{ display:'flex', gap:7 }}>
-          <button className="btn-g" onClick={openNew}>+ Add Vehicle</button>
-          <button className="btn-p" onClick={()=>setShowDispatchModal(true)}>⚡ Dispatch Vehicle</button>
-        </div>
-      </div>
+    <div>
+      <PageHeader
+        title="FLEET MANAGEMENT"
+        subtitle={`${vehicles.length} vehicles · ${moving} moving · ${alerts} alerts · ELD mandate compliant`}
+        actions={
+          <>
+            <button className="btn btn-ghost btn-sm" onClick={openNew}>+ Add Vehicle</button>
+            <button className="btn btn-primary" onClick={()=>setDispatch(true)}>⚡ Dispatch</button>
+          </>
+        }
+      />
 
-      {loading ? <div style={{ textAlign:'center', padding:40 }}><Spinner /></div> : (
-        <div className="gauto">
-          {filtered.length === 0 ? <EmptyState message="No vehicles found" /> : filtered.map(v=>(
-            <div key={v.id} className="gl-card" style={{ borderLeft:`3px solid ${v.status==='Alert'?'#ef4444':v.status==='Stopped'?'#f59e0b':'#14b8a6'}`, padding:16 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:9 }}>
-                <span style={{ fontFamily:"'Orbitron',monospace", fontSize:12, fontWeight:700 }}>{v.vehicle_number}</span>
-                <StatusBadge status={v.status} />
+      {loading ? <SkeletonCards count={6}/> : filtered.length===0 ? (
+        <EmptyState icon="🚛" title="No vehicles found" description="Add a vehicle to your fleet to get started."/>
+      ) : (
+        <div className="grid-auto">
+          {filtered.map(v=>(
+            <div key={v.id} className="card" style={{borderLeft:`3px solid ${statusColor(v.status)}`,padding:16}}>
+              {/* Header */}
+              <div className="flex items-center justify-between mb-8">
+                <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700}}>{v.vehicle_number}</span>
+                <StatusBadge status={v.status}/>
               </div>
-              <div style={{ fontSize:11.5, color:'var(--t2)', marginBottom:5 }}>👤 {v.driver_name || 'Unassigned'}</div>
-              <div style={{ fontSize:10.5, color:'var(--t3)', marginBottom:10 }}>📦 {v.cargo_type}</div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:10 }}>
-                <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:6, padding:7 }}>
-                  <div style={{ fontSize:9.5, color:'var(--t3)' }}>HOS Remaining</div>
-                  <div className="mono" style={{ fontSize:12, color:v.drive_remaining_minutes<60?'#f87171':'#5eead4', marginTop:2 }}>{Math.floor(v.drive_remaining_minutes/60)}h {v.drive_remaining_minutes%60}m</div>
-                </div>
-                <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:6, padding:7 }}>
-                  <div style={{ fontSize:9.5, color:'var(--t3)' }}>Fuel Level</div>
-                  <div className="mono" style={{ fontSize:12, color:v.fuel_percent<25?'#f87171':v.fuel_percent<50?'#fbbf24':'#a78bfa', marginTop:2 }}>{v.fuel_percent}%</div>
-                </div>
-                <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:6, padding:7 }}>
-                  <div style={{ fontSize:9.5, color:'var(--t3)' }}>ELD Status</div>
-                  <div className="mono" style={{ fontSize:10, color:v.eld_status==='Malfunction'?'#f87171':'#5eead4', marginTop:2 }}>{v.eld_status}</div>
-                </div>
-                <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:6, padding:7 }}>
-                  <div style={{ fontSize:9.5, color:'var(--t3)' }}>Speed</div>
-                  <div className="mono" style={{ fontSize:12, marginTop:2 }}>{v.speed_mph} mph</div>
-                </div>
+
+              <div style={{fontSize:12.5,color:'var(--t2)',marginBottom:3}}>👤 {v.driver_name||<span style={{color:'var(--t3)'}}>Unassigned</span>}</div>
+              <div style={{fontSize:11,color:'var(--t3)',marginBottom:12}}>📦 {v.cargo_type}</div>
+
+              {/* Stats grid */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:12}}>
+                {[
+                  {l:'Drive Remaining', v:`${Math.floor(v.drive_remaining_minutes/60)}h ${v.drive_remaining_minutes%60}m`, c:hosColor(v.drive_remaining_minutes)},
+                  {l:'Fuel Level',      v:`${v.fuel_percent}%`,  c:fuelColor(v.fuel_percent)},
+                  {l:'ELD Status',      v:v.eld_status,          c:v.eld_status==='Malfunction'?'#f87171':'#5eead4'},
+                  {l:'Speed',           v:`${v.speed_mph} mph`,  c:'var(--t1)'},
+                ].map(s=>(
+                  <div key={s.l} style={{background:'rgba(255,255,255,0.03)',borderRadius:7,padding:8}}>
+                    <div style={{fontSize:9.5,color:'var(--t3)',marginBottom:2}}>{s.l}</div>
+                    <div className="mono" style={{fontSize:12,color:s.c}}>{s.v}</div>
+                  </div>
+                ))}
               </div>
-              <ProgressBar value={v.fuel_percent} color={v.fuel_percent<25?'#ef4444':v.fuel_percent<50?'#f59e0b':'#14b8a6'} />
-              <div style={{ display:'flex', gap:6, marginTop:10 }}>
-                <button className="btn-g" style={{ flex:1, fontSize:11 }} onClick={()=>openEdit(v)}>Edit</button>
-                <button className="btn-danger" style={{ fontSize:11 }} onClick={()=>handleDelete(v)}>Remove</button>
+
+              {/* Fuel bar */}
+              <div style={{marginBottom:4}}>
+                <div className="flex justify-between mb-4" style={{fontSize:9.5,color:'var(--t3)'}}>
+                  <span>Fuel</span><span>{v.fuel_percent}%</span>
+                </div>
+                <ProgressBar value={v.fuel_percent} color={fuelColor(v.fuel_percent)}/>
+              </div>
+
+              {v.eld_status==='Malfunction' && (
+                <div style={{marginTop:10,padding:'5px 10px',borderRadius:6,background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.18)',fontSize:10.5,color:'#f87171'}}>
+                  ⚠ ELD Malfunction — manual log required
+                </div>
+              )}
+              {v.drive_remaining_minutes < 60 && (
+                <div style={{marginTop:6,padding:'5px 10px',borderRadius:6,background:'rgba(245,158,11,0.08)',border:'1px solid rgba(245,158,11,0.18)',fontSize:10.5,color:'#fbbf24'}}>
+                  ⏱ HOS ALERT — {v.drive_remaining_minutes} min remaining
+                </div>
+              )}
+
+              <div className="flex gap-6 mt-12">
+                <button className="btn btn-ghost btn-sm" style={{flex:1}} onClick={()=>openEdit(v)}>Edit</button>
+                <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(v)}>Remove</button>
               </div>
             </div>
           ))}
         </div>
       )}
 
+      {/* Edit/Add Modal */}
       {showModal && (
-        <Modal title={editVeh ? `EDIT — ${editVeh.vehicle_number}` : 'ADD VEHICLE'} onClose={()=>setShowModal(false)}>
+        <Modal title={editVeh?`EDIT — ${editVeh.vehicle_number}`:'ADD VEHICLE'} onClose={()=>setShow(false)}>
           <form onSubmit={handleSave}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-              <FormRow label="Vehicle Number"><input className="g-input" value={form.vehicle_number} onChange={e=>setForm({...form,vehicle_number:e.target.value})} readOnly={!!editVeh} /></FormRow>
-              <FormRow label="Driver Name"><input className="g-input" value={form.driver_name} onChange={e=>setForm({...form,driver_name:e.target.value})} /></FormRow>
-              <FormRow label="Status"><select className="g-input" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{STATUSES.map(s=><option key={s}>{s}</option>)}</select></FormRow>
-              <FormRow label="ELD Status"><select className="g-input" value={form.eld_status} onChange={e=>setForm({...form,eld_status:e.target.value})}>{ELD_OPTS.map(s=><option key={s}>{s}</option>)}</select></FormRow>
-              <FormRow label="HOS Status"><select className="g-input" value={form.hos_status} onChange={e=>setForm({...form,hos_status:e.target.value})}>{HOS_OPTS.map(s=><option key={s}>{s}</option>)}</select></FormRow>
-              <FormRow label="Cargo Type"><select className="g-input" value={form.cargo_type} onChange={e=>setForm({...form,cargo_type:e.target.value})}>{CARGO_TYPES.map(c=><option key={c}>{c}</option>)}</select></FormRow>
-              <FormRow label="Fuel (%)"><input className="g-input" type="number" min="0" max="100" value={form.fuel_percent} onChange={e=>setForm({...form,fuel_percent:e.target.value})} /></FormRow>
-              <FormRow label="Drive Remaining (min)"><input className="g-input" type="number" min="0" max="660" value={form.drive_remaining_minutes} onChange={e=>setForm({...form,drive_remaining_minutes:e.target.value})} /></FormRow>
-              <FormRow label="Speed (mph)"><input className="g-input" type="number" min="0" value={form.speed_mph} onChange={e=>setForm({...form,speed_mph:e.target.value})} /></FormRow>
-              <FormRow label="Odometer (mi)"><input className="g-input" type="number" min="0" value={form.odometer_miles} onChange={e=>setForm({...form,odometer_miles:e.target.value})} /></FormRow>
+            <div className="modal-body">
+              <div className="form-grid">
+                <Field label="Vehicle Number"><input className="input" readOnly={!!editVeh} value={form.vehicle_number} onChange={e=>setForm(p=>({...p,vehicle_number:e.target.value}))}/></Field>
+                <Field label="Driver Name"><input className="input" placeholder="Full name" value={form.driver_name} onChange={e=>setForm(p=>({...p,driver_name:e.target.value}))}/></Field>
+                <Field label="Status"><select className="input" value={form.status} onChange={e=>setForm(p=>({...p,status:e.target.value}))}>{VEH_STATUSES.map(s=><option key={s}>{s}</option>)}</select></Field>
+                <Field label="ELD Status"><select className="input" value={form.eld_status} onChange={e=>setForm(p=>({...p,eld_status:e.target.value}))}>{ELD_OPTS.map(s=><option key={s}>{s}</option>)}</select></Field>
+                <Field label="HOS Status"><select className="input" value={form.hos_status} onChange={e=>setForm(p=>({...p,hos_status:e.target.value}))}>{HOS_OPTS.map(s=><option key={s}>{s}</option>)}</select></Field>
+                <Field label="Cargo Type"><select className="input" value={form.cargo_type} onChange={e=>setForm(p=>({...p,cargo_type:e.target.value}))}>{CARGO_TYPES.map(c=><option key={c}>{c}</option>)}</select></Field>
+                <Field label="Fuel (%)"><input className="input" type="number" min="0" max="100" value={form.fuel_percent} onChange={e=>setForm(p=>({...p,fuel_percent:e.target.value}))}/></Field>
+                <Field label="Drive Remaining (min)"><input className="input" type="number" min="0" max="660" value={form.drive_remaining_minutes} onChange={e=>setForm(p=>({...p,drive_remaining_minutes:e.target.value}))}/></Field>
+                <Field label="Speed (mph)"><input className="input" type="number" min="0" value={form.speed_mph} onChange={e=>setForm(p=>({...p,speed_mph:e.target.value}))}/></Field>
+                <Field label="Odometer (mi)"><input className="input" type="number" min="0" value={form.odometer_miles} onChange={e=>setForm(p=>({...p,odometer_miles:e.target.value}))}/></Field>
+              </div>
             </div>
-            <div className="form-actions">
-              <button type="button" className="btn-g" onClick={()=>setShowModal(false)}>Cancel</button>
-              <button type="submit" className="btn-p" disabled={saving}>{saving ? <Spinner/> : editVeh ? 'Update' : 'Add Vehicle'}</button>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={()=>setShow(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving?<Spinner/>:editVeh?'Update Vehicle':'Add Vehicle'}</button>
             </div>
           </form>
         </Modal>
       )}
 
-      {showDispatchModal && (
-        <Modal title="DISPATCH VEHICLE" onClose={()=>setShowDispatchModal(false)}>
+      {/* Dispatch Modal */}
+      {showDispatch && (
+        <Modal title="DISPATCH VEHICLE" onClose={()=>setDispatch(false)} size="sm">
           <form onSubmit={handleDispatch}>
-            <FormRow label="Select Vehicle *">
-              <select className="g-input" value={dispatchForm.vehicle_id} onChange={e=>setDispatchForm({...dispatchForm,vehicle_id:e.target.value})} required>
-                <option value="">-- Choose vehicle --</option>
-                {vehicles.filter(v=>v.status!=='Moving').map(v=><option key={v.id} value={v.vehicle_number}>{v.vehicle_number} — {v.driver_name||'Unassigned'}</option>)}
-              </select>
-            </FormRow>
-            <FormRow label="Destination *"><input className="g-input" value={dispatchForm.destination} onChange={e=>setDispatchForm({...dispatchForm,destination:e.target.value})} placeholder="e.g. USDETROIT" required /></FormRow>
-            <FormRow label="Cargo Type"><select className="g-input" value={dispatchForm.cargo_type} onChange={e=>setDispatchForm({...dispatchForm,cargo_type:e.target.value})}>{CARGO_TYPES.map(c=><option key={c}>{c}</option>)}</select></FormRow>
-            <FormRow label="Notes"><textarea className="g-input" value={dispatchForm.notes} onChange={e=>setDispatchForm({...dispatchForm,notes:e.target.value})} style={{ height:60 }} /></FormRow>
-            <div className="form-actions">
-              <button type="button" className="btn-g" onClick={()=>setShowDispatchModal(false)}>Cancel</button>
-              <button type="submit" className="btn-p" disabled={saving}>{saving ? <Spinner/> : '⚡ Dispatch'}</button>
+            <div className="modal-body">
+              <Field label="Select Vehicle *">
+                <select className="input" value={dispForm.vehicle_id} onChange={e=>setDF(p=>({...p,vehicle_id:e.target.value}))} required>
+                  <option value="">— choose vehicle —</option>
+                  {vehicles.filter(v=>v.status!=='Moving').map(v=><option key={v.id} value={v.vehicle_number}>{v.vehicle_number} · {v.driver_name||'Unassigned'}</option>)}
+                </select>
+              </Field>
+              <Field label="Destination *" className="mt-4"><input className="input" placeholder="USDETROIT" value={dispForm.destination} onChange={e=>setDF(p=>({...p,destination:e.target.value}))} required/></Field>
+              <Field label="Cargo Type" className="mt-4"><select className="input" value={dispForm.cargo_type} onChange={e=>setDF(p=>({...p,cargo_type:e.target.value}))}>{CARGO_TYPES.map(c=><option key={c}>{c}</option>)}</select></Field>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={()=>setDispatch(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving?<Spinner/>:'⚡ Dispatch Now'}</button>
             </div>
           </form>
         </Modal>
       )}
+      {ConfirmEl}
     </div>
   );
 }
